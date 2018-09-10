@@ -3,13 +3,13 @@ use std::io::{self, Read, Write};
 use std::os::windows::io::*;
 use std::path::PathBuf;
 
-use futures::Poll;
+use futures::{Async, Poll};
 use mio::Ready;
 use mio_named_pipes;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::reactor::PollEvented2;
 
-use Incoming;
+use {Incoming, NamedPipeStream};
 
 pub struct NamedPipeListener {
     io: PollEvented2<mio_named_pipes::NamedPipe>,
@@ -43,6 +43,22 @@ impl NamedPipeListener {
 
     pub fn poll_write_ready(&self) -> Poll<Ready, io::Error> {
         self.io.poll_write_ready()
+    }
+
+    pub fn poll_accept(&self) -> Poll<NamedPipeStream, io::Error> {
+        try_ready!(self.poll_read_ready(Ready::readable()));
+
+        match self.connect() {
+            Ok(()) => {
+                let stream = NamedPipeStream::new_connection(&self.path)?;
+                Ok(Async::Ready(stream))
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                try!(self.clear_read_ready(Ready::readable()));
+                Ok(Async::NotReady)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub fn incoming(self) -> Incoming {

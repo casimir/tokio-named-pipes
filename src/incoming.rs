@@ -1,7 +1,6 @@
 use std::io;
 
 use futures::{Async, Poll, Stream};
-use mio::Ready;
 
 use {NamedPipeListener, NamedPipeStream};
 
@@ -22,18 +21,7 @@ impl Stream for Incoming {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, io::Error> {
-        try_ready!(self.pipe.poll_read_ready(Ready::readable()));
-
-        match self.pipe.connect() {
-            Ok(()) => {
-                let stream = NamedPipeStream::new_connection(&self.pipe.path)?;
-                Ok(Async::Ready(Some(stream)))
-            }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                try!(self.pipe.clear_read_ready(Ready::readable()));
-                Ok(Async::NotReady)
-            }
-            Err(e) => Err(e),
-        }
+        let stream = try_ready!(self.pipe.poll_accept());
+        Ok(Async::Ready(Some(stream)))
     }
 }
